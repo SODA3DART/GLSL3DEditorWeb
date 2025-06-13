@@ -1,0 +1,5 @@
+{
+  "name": "Real-time GLSL Shader Editor",
+  "description": "A web application for VJs and shader enthusiasts to write GLSL fragment shaders and see them render in real-time. Features an overlay editor similar to KodeLife for an immersive creative experience.",
+  "requestFramePermissions": []
+}
