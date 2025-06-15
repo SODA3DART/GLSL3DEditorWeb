@@ -215,6 +215,12 @@
       >
         AR
       </button>
+      <button 
+        id="mode-vr"
+        class="px-3 py-1 rounded text-sm bg-gray-600 hover:bg-gray-500"
+      >
+        VR
+      </button>
 
       <div id="primitive-controls" class="ml-4 flex items-center space-x-2">
         <span class="text-sm font-semibold">Primitive:</span>
@@ -459,7 +465,9 @@ void main() {
       xrReferenceSpace: null,
       xrHitTestSource: null,
       xrViewerSpace: null,
-      xrSupported: false
+      xrARSupported: false,
+      // VR-specific state
+      xrVRSupported: false
     };
 
     // DOM Elements
@@ -470,6 +478,7 @@ void main() {
     const mode2DButton = document.getElementById('mode-2d');
     const mode3DButton = document.getElementById('mode-3d');
     const modeARButton = document.getElementById('mode-ar');
+    const modeVRButton = document.getElementById('mode-vr');
     const primitiveControls = document.getElementById('primitive-controls');
     const primitiveSelect = document.getElementById('primitive-select');
     const uploadObjButton = document.getElementById('upload-obj');
@@ -499,25 +508,35 @@ void main() {
 
     // Check for WebXR support
     if ('xr' in navigator) {
+      // Check for AR support
       navigator.xr.isSessionSupported('immersive-ar').then((supported) => {
-        state.xrSupported = supported;
+        state.xrARSupported = supported;
         modeARButton.disabled = !supported;
-        switchToARButton.disabled = !supported;
 
         if (!supported) {
           modeARButton.title = "WebXR AR not supported on this device";
-          switchToARButton.title = "WebXR AR not supported on this device";
           modeARButton.classList.add('opacity-50');
-          switchToARButton.classList.add('opacity-50');
+        }
+      });
+
+      // Check for VR support
+      navigator.xr.isSessionSupported('immersive-vr').then((supported) => {
+        state.xrVRSupported = supported;
+        modeVRButton.disabled = !supported;
+
+        if (!supported) {
+          modeVRButton.title = "WebXR VR not supported on this device";
+          modeVRButton.classList.add('opacity-50');
         }
       });
     } else {
+      // WebXR not supported at all
       modeARButton.disabled = true;
-      switchToARButton.disabled = true;
+      modeVRButton.disabled = true;
       modeARButton.title = "WebXR not supported in this browser";
-      switchToARButton.title = "WebXR not supported in this browser";
+      modeVRButton.title = "WebXR not supported in this browser";
       modeARButton.classList.add('opacity-50');
-      switchToARButton.classList.add('opacity-50');
+      modeVRButton.classList.add('opacity-50');
     }
 
     // Initialize editor
@@ -661,10 +680,18 @@ void main() {
     // });
 
     modeARButton.addEventListener('click', function() {
-      if (state.xrSupported) {
+      if (state.xrARSupported) {
         setRenderMode('AR');
       } else {
         alert('WebXR AR is not supported on this device or browser');
+      }
+    });
+
+    modeVRButton.addEventListener('click', function() {
+      if (state.xrVRSupported) {
+        setRenderMode('VR');
+      } else {
+        alert('WebXR VR is not supported on this device or browser');
       }
     });
 
@@ -922,14 +949,30 @@ void main() {
         endARSession();
       }
 
+      // If we're already in VR mode and trying to switch to another mode, end the VR session first
+      if (state.renderMode === 'VR' && mode !== 'VR') {
+        endVRSession();
+      }
+
       // If we're switching to AR mode, start the AR session
       if (mode === 'AR') {
-        if (state.xrSupported) {
+        if (state.xrARSupported) {
           startARSession();
           return; // The rest of the mode switching will happen after the AR session starts
         } else {
           alert('WebXR AR is not supported on this device or browser');
           return; // Don't proceed with mode change if AR is not supported
+        }
+      }
+
+      // If we're switching to VR mode, start the VR session
+      if (mode === 'VR') {
+        if (state.xrVRSupported) {
+          startVRSession();
+          return; // The rest of the mode switching will happen after the VR session starts
+        } else {
+          alert('WebXR VR is not supported on this device or browser');
+          return; // Don't proceed with mode change if VR is not supported
         }
       }
 
@@ -953,6 +996,10 @@ void main() {
         : 'px-3 py-1 rounded text-sm bg-gray-600 hover:bg-gray-500';
 
       modeARButton.className = mode === 'AR'
+        ? 'px-3 py-1 rounded text-sm bg-indigo-500 text-white'
+        : 'px-3 py-1 rounded text-sm bg-gray-600 hover:bg-gray-500';
+
+      modeVRButton.className = mode === 'VR'
         ? 'px-3 py-1 rounded text-sm bg-indigo-500 text-white'
         : 'px-3 py-1 rounded text-sm bg-gray-600 hover:bg-gray-500';
 
@@ -1001,7 +1048,7 @@ void main() {
 
     // WebXR AR functions
     async function startARSession() {
-      if (!state.xrSupported || !navigator.xr) {
+      if (!state.xrARSupported || !navigator.xr) {
         alert('WebXR AR is not supported on this device or browser');
         return;
       }
@@ -1211,6 +1258,195 @@ void main() {
               gl.drawElements(gl.TRIANGLES, state.numIndices, gl.UNSIGNED_SHORT, 0);
             }
           }
+        }
+      }
+    }
+
+    // WebXR VR functions
+    async function startVRSession() {
+      if (!state.xrVRSupported || !navigator.xr) {
+        alert('WebXR VR is not supported on this device or browser');
+        return;
+      }
+
+      try {
+        // Request an immersive-vr session
+        const session = await navigator.xr.requestSession('immersive-vr', {
+          requiredFeatures: ['local'],
+          optionalFeatures: ['hand-tracking']
+        });
+
+        state.xrSession = session;
+
+        // Set up the WebGL context for XR
+        const gl = canvas.getContext('webgl', { xrCompatible: true });
+        state.gl = gl;
+
+        // Set up the XR WebGL layer
+        const xrGlLayer = new XRWebGLLayer(session, gl);
+        session.updateRenderState({ baseLayer: xrGlLayer });
+
+        // Get the reference space
+        state.xrReferenceSpace = await session.requestReferenceSpace('local');
+        state.xrViewerSpace = await session.requestReferenceSpace('viewer');
+
+        // Set up session end event handler
+        session.addEventListener('end', () => {
+          state.xrSession = null;
+          state.xrReferenceSpace = null;
+          state.xrViewerSpace = null;
+
+          // Switch back to 3D mode when VR session ends
+          setRenderMode('3D');
+        });
+
+        // Update state and UI
+        state.renderMode = 'VR';
+
+        // Update UI
+        mode2DButton.className = 'px-3 py-1 rounded text-sm bg-gray-600 hover:bg-gray-500';
+        mode3DButton.className = 'px-3 py-1 rounded text-sm bg-gray-600 hover:bg-gray-500';
+        modeARButton.className = 'px-3 py-1 rounded text-sm bg-gray-600 hover:bg-gray-500';
+        modeVRButton.className = 'px-3 py-1 rounded text-sm bg-indigo-500 text-white';
+
+        primitiveControls.style.display = 'none';
+
+        // Hide texture controls and panel in VR mode
+        textureControls.style.display = 'none';
+        texturePanel.style.display = 'none';
+
+        // Keep control panel toggle button visible in VR mode
+        toggleControlPanelButton.style.display = 'block';
+
+        // Set up the WebGL program for VR
+        setupVRRendering(session);
+
+      } catch (error) {
+        console.error('Error starting VR session:', error);
+        alert('Error starting VR session: ' + error.message);
+      }
+    }
+
+    function endVRSession() {
+      if (state.xrSession) {
+        state.xrSession.end();
+        // The session's 'end' event handler will clean up the state
+      }
+    }
+
+    function setupVRRendering(session) {
+      // Create shader program for VR
+      try {
+        const vertexShader = createShader(state.gl, state.gl.VERTEX_SHADER, state.activeVertexShader);
+        const fragmentShader = createShader(state.gl, state.gl.FRAGMENT_SHADER, state.activeFragmentShader);
+        const program = createProgram(state.gl, vertexShader, fragmentShader);
+
+        state.program = program;
+        state.lastSuccessfulProgram = program;
+
+        // Set up geometry for VR (use the same as 3D mode)
+        setupGeometry();
+
+        // Set up XR frame loop
+        session.requestAnimationFrame(renderVRFrame);
+      } catch (error) {
+        console.error('Error setting up VR rendering:', error);
+        showError('Error setting up VR rendering: ' + error.message);
+        endVRSession();
+      }
+    }
+
+    function renderVRFrame(time, frame) {
+      const session = state.xrSession;
+
+      if (!session) return;
+
+      // Request the next frame
+      session.requestAnimationFrame(renderVRFrame);
+
+      const gl = state.gl;
+      const program = state.program;
+
+      if (!gl || !program) return;
+
+      // Get the XR pose
+      const referenceSpace = state.xrReferenceSpace;
+      const pose = frame.getViewerPose(referenceSpace);
+
+      if (!pose) return;
+
+      // Get the WebGL layer
+      const glLayer = session.renderState.baseLayer;
+
+      // Bind the WebGL layer's framebuffer
+      gl.bindFramebuffer(gl.FRAMEBUFFER, glLayer.framebuffer);
+
+      // Clear the framebuffer
+      gl.clearColor(0.1, 0.1, 0.1, 1.0);
+      gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+
+      // Enable depth testing
+      gl.enable(gl.DEPTH_TEST);
+
+      // Use the program
+      gl.useProgram(program);
+
+      // Set time uniform
+      const timeLocation = gl.getUniformLocation(program, 'u_time');
+      const currentTime = (Date.now() - state.startTime) / 1000;
+      gl.uniform1f(timeLocation, currentTime);
+
+      // Render the 3D object in VR
+      for (const view of pose.views) {
+        const viewport = glLayer.getViewport(view);
+        gl.viewport(viewport.x, viewport.y, viewport.width, viewport.height);
+
+        // Set projection and view matrices from the XR view
+        const projectionMatrix = view.projectionMatrix;
+        const viewMatrix = view.transform.inverse.matrix;
+
+        // Set uniforms
+        const projectionMatrixLocation = gl.getUniformLocation(program, 'u_projectionMatrix');
+        gl.uniformMatrix4fv(projectionMatrixLocation, false, projectionMatrix);
+
+        const viewMatrixLocation = gl.getUniformLocation(program, 'u_viewMatrix');
+        gl.uniformMatrix4fv(viewMatrixLocation, false, viewMatrix);
+
+        // Create model matrix - position the object in front of the user
+        const modelMatrix = createIdentityMatrix();
+        // Position the object 2 meters in front of the user
+        modelMatrix[14] = -2.0;
+
+        const modelMatrixLocation = gl.getUniformLocation(program, 'u_modelMatrix');
+        gl.uniformMatrix4fv(modelMatrixLocation, false, modelMatrix);
+
+        // Set normal matrix (simplified for this example)
+        const normalMatrix = createIdentityMatrix();
+        const normalMatrixLocation = gl.getUniformLocation(program, 'u_normalMatrix');
+        gl.uniformMatrix4fv(normalMatrixLocation, false, normalMatrix);
+
+        // Set light direction
+        const lightDirectionLocation = gl.getUniformLocation(program, 'u_lightDirection');
+        gl.uniform3f(lightDirectionLocation, 0.5, 0.75, 1.0);
+
+        // Set light color
+        const lightColorLocation = gl.getUniformLocation(program, 'u_lightColor');
+        gl.uniform3f(lightColorLocation, 1.0, 1.0, 1.0);
+
+        // Set ambient color
+        const ambientColorLocation = gl.getUniformLocation(program, 'u_ambientColor');
+        gl.uniform3f(ambientColorLocation, 0.2, 0.2, 0.3);
+
+        // Set view position
+        const viewPos = [view.transform.position.x, view.transform.position.y, view.transform.position.z];
+        const viewPositionLocation = gl.getUniformLocation(program, 'u_viewPosition');
+        gl.uniform3f(viewPositionLocation, viewPos[0], viewPos[1], viewPos[2]);
+
+        // Draw the 3D geometry
+        if (state.selectedPrimitive === 'UploadedOBJ' && state.uploadedOBJData) {
+          gl.drawArrays(gl.TRIANGLES, 0, state.numIndices);
+        } else {
+          gl.drawElements(gl.TRIANGLES, state.numIndices, gl.UNSIGNED_SHORT, 0);
         }
       }
     }
