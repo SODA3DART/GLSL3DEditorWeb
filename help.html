@@ -1,0 +1,239 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>GLSL 3D Editor - Help</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            line-height: 1.6;
+            color: #333;
+            max-width: 900px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        h1, h2, h3 {
+            color: #2a4365;
+        }
+        pre, code {
+            background-color: #f0f0f0;
+            border-radius: 4px;
+            padding: 2px 5px;
+            font-family: 'Consolas', 'Monaco', monospace;
+        }
+        pre {
+            padding: 15px;
+            overflow-x: auto;
+        }
+        .note {
+            background-color: #e6f7ff;
+            border-left: 4px solid #1890ff;
+            padding: 10px 15px;
+            margin: 15px 0;
+        }
+        .warning {
+            background-color: #fff7e6;
+            border-left: 4px solid #fa8c16;
+            padding: 10px 15px;
+            margin: 15px 0;
+        }
+        img {
+            max-width: 100%;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            margin: 10px 0;
+        }
+        .steps {
+            background-color: #f9f9f9;
+            border-radius: 8px;
+            padding: 15px 20px;
+            margin: 15px 0;
+        }
+        .steps ol {
+            padding-left: 25px;
+        }
+    </style>
+</head>
+<body>
+    <h1>GLSL 3D Editor - Help Guide</h1>
+    
+    <h2>Table of Contents</h2>
+    <ul>
+        <li><a href="#introduction">Introduction</a></li>
+        <li><a href="#textures">Working with Textures</a>
+            <ul>
+                <li><a href="#upload-textures">How to Upload Textures</a></li>
+                <li><a href="#use-textures">How to Use Textures in Shaders</a></li>
+                <li><a href="#texture-examples">Texture Usage Examples</a></li>
+            </ul>
+        </li>
+        <li><a href="#3d-controls">3D Controls</a></li>
+        <li><a href="#tips">Tips and Tricks</a></li>
+    </ul>
+
+    <h2 id="introduction">Introduction</h2>
+    <p>
+        The GLSL 3D Editor is a web-based tool for creating and experimenting with GLSL shaders.
+        It supports both 2D and 3D rendering modes, allowing you to create a wide variety of visual effects.
+    </p>
+
+    <h2 id="textures">Working with Textures</h2>
+    
+    <h3 id="upload-textures">How to Upload Textures</h3>
+    <div class="steps">
+        <p>Follow these steps to upload and use textures in your shaders:</p>
+        <ol>
+            <li>Switch to <strong>3D mode</strong> by clicking the "3D" button in the top toolbar.</li>
+            <li>The texture panel should automatically appear below the toolbar. If it doesn't, click the <strong>"Show Textures"</strong> button.</li>
+            <li>In the texture panel, click the <strong>"Add Texture"</strong> button.</li>
+            <li>Select an image file from your computer (PNG, JPG, etc.).</li>
+            <li>The texture will be uploaded and displayed as a thumbnail in the texture panel.</li>
+            <li>Each texture is assigned a unique uniform name (e.g., <code>u_texture0</code>) that you can use in your shader code.</li>
+        </ol>
+    </div>
+
+    <div class="note">
+        <p><strong>Note:</strong> Textures are only available in 3D mode. The texture panel will automatically appear when you switch to 3D mode.</p>
+    </div>
+
+    <h3 id="use-textures">How to Use Textures in Shaders</h3>
+    <p>
+        Once you've uploaded a texture, you can use it in your fragment shader. Each texture is available as a uniform sampler2D with the name shown below the texture thumbnail.
+    </p>
+
+    <p>To use a texture in your shader:</p>
+    <ol>
+        <li>Declare the uniform sampler2D with the same name shown in the texture panel (e.g., <code>u_texture0</code>).</li>
+        <li>Use the <code>texture2D</code> function to sample the texture at specific UV coordinates.</li>
+        <li>The UV coordinates are available in the fragment shader as <code>v_texcoord</code>.</li>
+    </ol>
+
+    <pre><code>// In your fragment shader:
+precision mediump float;
+
+uniform sampler2D u_texture0; // Declare the texture uniform
+varying vec2 v_texcoord;      // UV coordinates from vertex shader
+
+void main() {
+    // Sample the texture at the current UV coordinate
+    vec4 texColor = texture2D(u_texture0, v_texcoord);
+    
+    // Use the texture color
+    gl_FragColor = texColor;
+}</code></pre>
+
+    <h3 id="texture-examples">Texture Usage Examples</h3>
+
+    <h4>Basic Texture Mapping</h4>
+    <pre><code>precision mediump float;
+
+uniform sampler2D u_texture0;
+varying vec2 v_texcoord;
+
+void main() {
+    // Simply output the texture color
+    gl_FragColor = texture2D(u_texture0, v_texcoord);
+}</code></pre>
+
+    <h4>Combining Multiple Textures</h4>
+    <pre><code>precision mediump float;
+
+uniform sampler2D u_texture0; // Base texture
+uniform sampler2D u_texture1; // Detail texture
+varying vec2 v_texcoord;
+
+void main() {
+    // Sample both textures
+    vec4 baseColor = texture2D(u_texture0, v_texcoord);
+    vec4 detailColor = texture2D(u_texture1, v_texcoord);
+    
+    // Mix the textures
+    gl_FragColor = mix(baseColor, detailColor, 0.5);
+}</code></pre>
+
+    <h4>Texture with Lighting</h4>
+    <pre><code>precision mediump float;
+
+uniform sampler2D u_texture0;
+uniform vec3 u_lightDirection;
+uniform vec3 u_lightColor;
+uniform vec3 u_ambientColor;
+
+varying vec2 v_texcoord;
+varying vec3 v_normal;
+
+void main() {
+    // Sample the texture
+    vec4 texColor = texture2D(u_texture0, v_texcoord);
+    
+    // Calculate lighting
+    vec3 normal = normalize(v_normal);
+    vec3 lightDir = normalize(u_lightDirection);
+    float diff = max(dot(normal, lightDir), 0.0);
+    vec3 diffuse = diff * u_lightColor;
+    vec3 ambient = u_ambientColor;
+    
+    // Combine texture with lighting
+    vec3 finalColor = (ambient + diffuse) * texColor.rgb;
+    gl_FragColor = vec4(finalColor, texColor.a);
+}</code></pre>
+
+    <h4>UV Coordinate Manipulation</h4>
+    <pre><code>precision mediump float;
+
+uniform sampler2D u_texture0;
+uniform float u_time;
+varying vec2 v_texcoord;
+
+void main() {
+    // Create animated UV coordinates
+    vec2 uv = v_texcoord;
+    uv.x += sin(uv.y * 10.0 + u_time) * 0.1;
+    
+    // Sample the texture with the modified UVs
+    gl_FragColor = texture2D(u_texture0, uv);
+}</code></pre>
+
+    <h4>Using Procedural UVs for Models Without Texture Coordinates</h4>
+    <pre><code>precision mediump float;
+
+uniform sampler2D u_texture0;
+varying vec3 v_worldPosition;
+
+void main() {
+    // Generate UVs from world position
+    vec2 uv = vec2(v_worldPosition.x, v_worldPosition.z) * 0.5 + 0.5;
+    
+    // Sample the texture with the generated UVs
+    gl_FragColor = texture2D(u_texture0, uv);
+}</code></pre>
+
+    <h2 id="3d-controls">3D Controls</h2>
+    <p>When in 3D mode, you can control the camera with the following controls:</p>
+    <ul>
+        <li><strong>Left-click + drag</strong>: Rotate the camera around the object</li>
+        <li><strong>Right-click + drag</strong>: Pan the camera</li>
+        <li><strong>Mouse wheel</strong>: Zoom in/out</li>
+        <li><strong>WASD keys</strong>: Move the camera forward/backward/left/right</li>
+        <li><strong>Q/E keys</strong>: Move the camera down/up</li>
+    </ul>
+
+    <h2 id="tips">Tips and Tricks</h2>
+    <ul>
+        <li>For best performance, use power-of-2 sized textures (e.g., 256x256, 512x512).</li>
+        <li>If your model doesn't have UV coordinates, you can generate them procedurally in the shader.</li>
+        <li>You can use the <code>u_time</code> uniform to create animated effects with your textures.</li>
+        <li>The <code>mix()</code> function is useful for blending between multiple textures.</li>
+        <li>Remember to compile your shader after making changes by clicking the "Compile & Run" button.</li>
+    </ul>
+
+    <div class="warning">
+        <p><strong>Warning:</strong> Very large textures may cause performance issues. Try to keep texture sizes reasonable for web-based applications.</p>
+    </div>
+
+    <hr>
+    <p><small>&copy; 2023 GLSL 3D Editor. All rights reserved.</small></p>
+</body>
+</html>

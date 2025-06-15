@@ -11,7 +11,7 @@ import {
   PRIMITIVE_SPHERE,
   UPLOADED_OBJ
 } from './constants';
-import { RenderMode, PrimitiveShape, ModelData, CameraState } from './types';
+import { RenderMode, PrimitiveShape, ModelData, CameraState, TextureInfo } from './types';
 import { createCube, createSphere } from './utils/geometry';
 import { parseOBJ } from './utils/objParser';
 
@@ -19,7 +19,7 @@ const App: React.FC = () => {
   const [editorCode, setEditorCode] = useState<string>(DEFAULT_FRAGMENT_SHADER);
   const [activeFragmentShaderCode, setActiveFragmentShaderCode] = useState<string>(DEFAULT_FRAGMENT_SHADER);
   const [activeVertexShaderCode, setActiveVertexShaderCode] = useState<string>(DEFAULT_VERTEX_SHADER);
-  
+
   const [compileError, setCompileError] = useState<string | null>(null);
   const [editorVisible, setEditorVisible] = useState<boolean>(true);
 
@@ -28,13 +28,20 @@ const App: React.FC = () => {
   const [uploadedModelData, setUploadedModelData] = useState<ModelData | null>(null);
   const [currentModelData, setCurrentModelData] = useState<ModelData | null>(null);
 
+  // Texture state
+  const [textures, setTextures] = useState<TextureInfo[]>([]);
+  const [showTextureUpload, setShowTextureUpload] = useState<boolean>(false);
+
   const [cameraState, setCameraState] = useState<CameraState>({
     angleX: Math.PI / 6, // Initial pitch
     angleY: Math.PI / 4, // Initial yaw
     distance: 3,         // Initial distance from origin
+    panX: 0,             // Initial horizontal pan offset
+    panY: 0,             // Initial vertical pan offset
   });
 
   const fileInputRef = React.useRef<HTMLInputElement>(null);
+  const textureInputRef = React.useRef<HTMLInputElement>(null);
 
   // Update currentModelData based on selected primitive or uploaded OBJ
   useEffect(() => {
@@ -61,10 +68,14 @@ const App: React.FC = () => {
       // For simplicity, let's reset to default when switching modes to avoid incompatible shaders.
       setEditorCode(DEFAULT_FRAGMENT_SHADER);
       setActiveFragmentShaderCode(DEFAULT_FRAGMENT_SHADER);
+      // Hide texture panel in 2D mode
+      setShowTextureUpload(false);
     } else { // 3D mode
       setActiveVertexShaderCode(DEFAULT_VERTEX_SHADER_3D);
       setEditorCode(DEFAULT_FRAGMENT_SHADER_3D);
       setActiveFragmentShaderCode(DEFAULT_FRAGMENT_SHADER_3D);
+      // Automatically show texture panel in 3D mode
+      setShowTextureUpload(true);
     }
   }, [renderMode]);
 
@@ -110,9 +121,38 @@ const App: React.FC = () => {
       reader.readAsText(file);
     }
   };
-  
+
   const triggerFileUpload = () => {
     fileInputRef.current?.click();
+  };
+
+  const triggerTextureUpload = () => {
+    textureInputRef.current?.click();
+  };
+
+  const handleTextureUpload = (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (file) {
+      // Create a unique ID for the texture
+      const id = `texture${textures.length}`;
+      const name = file.name.split('.')[0] || id;
+
+      // Create a URL for the image
+      const url = URL.createObjectURL(file);
+
+      // Add the new texture to the textures array
+      const newTexture: TextureInfo = { id, name, url };
+      setTextures(prev => [...prev, newTexture]);
+
+      // Reset the input
+      if (event.target) {
+        event.target.value = '';
+      }
+    }
+  };
+
+  const toggleTextureUpload = () => {
+    setShowTextureUpload(prev => !prev);
   };
 
   return (
@@ -158,9 +198,52 @@ const App: React.FC = () => {
                 accept=".obj" 
                 className="hidden" 
             />
+
+            <span className="text-sm font-semibold ml-4">Textures:</span>
+            <button 
+                onClick={toggleTextureUpload}
+                className={`${showTextureUpload ? 'bg-indigo-500' : 'bg-teal-500 hover:bg-teal-600'} text-white text-sm px-3 py-1 rounded`}
+            >
+                {showTextureUpload ? 'Hide Textures' : 'Show Textures'}
+            </button>
+            <input 
+                type="file" 
+                ref={textureInputRef} 
+                onChange={handleTextureUpload} 
+                accept="image/*" 
+                className="hidden" 
+            />
           </>
         )}
       </div>
+
+      {/* Texture Panel */}
+      {showTextureUpload && (
+        <div className="bg-gray-800 p-2 shadow-md z-30 flex items-center space-x-4 overflow-x-auto">
+          <button 
+            onClick={triggerTextureUpload}
+            className="bg-green-500 hover:bg-green-600 text-white text-sm px-3 py-1 rounded flex-shrink-0"
+          >
+            Add Texture
+          </button>
+
+          {textures.length === 0 ? (
+            <span className="text-gray-400 text-sm">No textures added yet. Click "Add Texture" to upload.</span>
+          ) : (
+            textures.map((texture, index) => (
+              <div key={texture.id} className="flex flex-col items-center bg-gray-700 p-2 rounded">
+                <img 
+                  src={texture.url} 
+                  alt={texture.name} 
+                  className="w-12 h-12 object-cover rounded mb-1" 
+                />
+                <span className="text-xs text-white">{texture.name}</span>
+                <span className="text-xs text-gray-400">u_{texture.id}</span>
+              </div>
+            ))
+          )}
+        </div>
+      )}
 
       {/* Main Content Area */}
       <div className="flex-grow relative">
@@ -172,6 +255,7 @@ const App: React.FC = () => {
           onCompilationError={setCompileError}
           cameraState={cameraState}
           onCameraChange={setCameraState}
+          textures={textures}
         />
         {editorVisible && (
           <EditorPanel

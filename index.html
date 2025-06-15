@@ -6,8 +6,6 @@
   <title>GLSL Shader Editor</title>
   <script src="https://cdn.tailwindcss.com"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js"></script>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-core.min.js"></script>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-clike.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-glsl.min.js"></script>
   <style>
     /* Minimal PrismJS theme using Tailwind-like colors for GLSL */
@@ -186,9 +184,18 @@
   </style>
 </head>
 <body class="bg-gray-900 text-gray-100 overflow-hidden">
-  <div class="relative h-screen w-screen">
+  <div class="relative h-screen w-screen flex flex-col">
+    <!-- Toggle Control Panel Button -->
+    <button
+      id="toggle-control-panel"
+      class="fixed top-2 right-2 bg-gray-700 hover:bg-gray-600 text-white text-sm px-2 py-1 rounded z-40"
+      aria-label="Toggle Control Panel"
+    >
+      Hide Controls
+    </button>
+
     <!-- Controls Bar -->
-    <div class="bg-gray-800 p-2 shadow-md z-30 flex items-center space-x-4">
+    <div id="controls-bar" class="bg-gray-800 p-2 shadow-md z-30 flex items-center space-x-4">
       <span class="text-sm font-semibold">Mode:</span>
       <button 
         id="mode-2d"
@@ -232,6 +239,35 @@
           class="hidden" 
         />
       </div>
+
+      <div id="texture-controls" class="ml-4 flex items-center space-x-2">
+        <span class="text-sm font-semibold">Textures:</span>
+        <button 
+          id="toggle-texture"
+          class="bg-teal-500 hover:bg-teal-600 text-white text-sm px-3 py-1 rounded"
+        >
+          Show Textures
+        </button>
+        <input 
+          type="file" 
+          id="texture-file-input" 
+          accept="image/*" 
+          class="hidden" 
+        />
+      </div>
+    </div>
+
+    <!-- Texture Panel -->
+    <div id="texture-panel" class="bg-gray-800 p-2 shadow-md z-30 flex items-center space-x-4 overflow-x-auto">
+      <button 
+        id="add-texture"
+        class="bg-green-500 hover:bg-green-600 text-white text-sm px-3 py-1 rounded flex-shrink-0"
+      >
+        Add Texture
+      </button>
+      <div id="texture-list" class="flex items-center space-x-4 overflow-x-auto">
+        <span class="text-gray-400 text-sm">No textures added yet. Click "Add Texture" to upload.</span>
+      </div>
     </div>
 
     <!-- Canvas Container -->
@@ -240,7 +276,7 @@
     </div>
 
     <!-- Editor Panel -->
-    <div id="editor-container" class="absolute top-4 left-4 w-full max-w-lg lg:max-w-xl editor-panel z-20 flex flex-col" style="min-height: 300px; max-height: 80vh;">
+    <div id="editor-container" class="absolute top-24 left-4 w-full max-w-lg lg:max-w-xl editor-panel z-20 flex flex-col" style="min-height: 300px; max-height: 80vh;">
       <div class="drag-handle bg-gray-900 bg-opacity-70 p-2 flex justify-between items-center">
         <h2 class="text-sm font-semibold text-gray-200">GLSL Editor</h2>
         <button id="close-editor" class="text-gray-400 hover:text-white transition-colors" aria-label="Close Editor">
@@ -288,50 +324,6 @@
       </div>
     </div>
 
-    <!-- Toggle Editor Button -->
-    <button
-      id="toggle-editor"
-      class="fixed bottom-4 right-4 bg-indigo-600 hover:bg-indigo-700 text-white font-semibold py-2 px-4 rounded-lg shadow-lg transition-all duration-150 ease-in-out z-50"
-      aria-label="Show Editor"
-    >
-      Show Editor
-    </button>
-
-    <!-- 2D Mode Button -->
-    <button
-      id="switch-to-2d"
-      class="fixed bottom-4 left-4 bg-blue-600 hover:bg-blue-700 text-white font-semibold py-2 px-4 rounded-lg shadow-lg transition-all duration-150 ease-in-out z-50"
-      aria-label="Switch to 2D Mode"
-    >
-      2D Mode
-    </button>
-
-    <!-- 3D Mode Button -->
-    <button
-      id="switch-to-3d"
-      class="fixed bottom-4 left-4 bg-indigo-600 hover:bg-indigo-700 text-white font-semibold py-2 px-4 rounded-lg shadow-lg transition-all duration-150 ease-in-out z-50"
-      aria-label="Switch to 3D Mode"
-    >
-      3D Mode
-    </button>
-
-    <!-- AR Mode Button -->
-    <button
-      id="switch-to-ar"
-      class="fixed bottom-4 left-36 bg-purple-600 hover:bg-purple-700 text-white font-semibold py-2 px-4 rounded-lg shadow-lg transition-all duration-150 ease-in-out z-50"
-      aria-label="Switch to AR Mode"
-    >
-      AR Mode
-    </button>
-
-    <!-- Upload OBJ Button -->
-    <button
-      id="floating-upload-obj"
-      class="fixed bottom-4 left-1/2 transform -translate-x-1/2 bg-teal-500 hover:bg-teal-600 text-white font-semibold py-2 px-4 rounded-lg shadow-lg transition-all duration-150 ease-in-out z-50"
-      aria-label="Upload OBJ Model"
-    >
-      Upload OBJ Model
-    </button>
   </div>
 
   <script>
@@ -361,6 +353,7 @@ void main() {
     const DEFAULT_VERTEX_SHADER_3D = `
 attribute vec3 a_position;
 attribute vec3 a_normal;
+attribute vec2 a_texcoord; // Texture coordinates (UV) - may be available if model has UVs
 
 uniform mat4 u_modelMatrix;
 uniform mat4 u_viewMatrix;
@@ -369,12 +362,17 @@ uniform mat4 u_normalMatrix;
 
 varying vec3 v_normal;
 varying vec3 v_worldPosition;
+varying vec2 v_texcoord; // Pass texture coordinates to fragment shader
 
 void main() {
   vec4 worldPos = u_modelMatrix * vec4(a_position, 1.0);
   gl_Position = u_projectionMatrix * u_viewMatrix * worldPos;
   v_normal = normalize((u_normalMatrix * vec4(a_normal, 0.0)).xyz);
   v_worldPosition = worldPos.xyz;
+
+  // Pass texture coordinates to fragment shader
+  // If model doesn't have UVs, we'll generate them from position
+  v_texcoord = a_texcoord;
 }`;
 
     const DEFAULT_FRAGMENT_SHADER_3D = `
@@ -387,8 +385,13 @@ uniform vec3 u_lightColor;
 uniform vec3 u_ambientColor;
 uniform vec3 u_viewPosition; // Camera position for specular, etc.
 
+// Texture samplers - will be available when textures are uploaded
+// Example: uniform sampler2D u_texture0; // [BaseMap]
+// You can add more textures as needed
+
 varying vec3 v_normal;
 varying vec3 v_worldPosition;
+varying vec2 v_texcoord; // Texture coordinates from vertex shader
 
 void main() {
   vec3 normal = normalize(v_normal);
@@ -410,6 +413,14 @@ void main() {
   float b = 0.5 + 0.5 * cos(u_time * 1.2 + v_worldPosition.z * 0.5 - v_worldPosition.x * 0.2);
   objectBaseColor = mix(objectBaseColor, vec3(r,g,b), 0.7);
 
+  // Example of how to use textures:
+  // If you've uploaded a texture with ID "texture0":
+  // vec4 texColor = texture2D(u_texture0, v_texcoord);
+  // objectBaseColor = mix(objectBaseColor, texColor.rgb, 0.8);
+
+  // If model doesn't have UVs, you can generate them from position:
+  // vec4 texColor = texture2D(u_texture0, vec2(v_worldPosition.x, v_worldPosition.z) * 0.5 + 0.5);
+
   vec3 finalColor = (ambient + diffuse) * objectBaseColor;
 
   gl_FragColor = vec4(finalColor, 1.0);
@@ -419,6 +430,7 @@ void main() {
     let state = {
       renderMode: '3D',
       editorVisible: true,
+      controlPanelVisible: true, // Control panel visibility state
       currentFragmentShader: DEFAULT_FRAGMENT_SHADER_3D,
       activeFragmentShader: DEFAULT_FRAGMENT_SHADER_3D,
       lastSuccessfulFragmentShader: DEFAULT_FRAGMENT_SHADER_3D,
@@ -439,6 +451,9 @@ void main() {
       },
       isDragging: false,
       lastMousePosition: null,
+      // Texture-specific state
+      textures: [],
+      showTextureUpload: true, // Show texture panel by default in 3D mode
       // AR-specific state
       xrSession: null,
       xrReferenceSpace: null,
@@ -460,15 +475,27 @@ void main() {
     const uploadObjButton = document.getElementById('upload-obj');
     const objFileInput = document.getElementById('obj-file-input');
     const compileButton = document.getElementById('compile-button');
-    const toggleEditorButton = document.getElementById('toggle-editor');
+    // Removed bottom buttons
+    // const toggleEditorButton = document.getElementById('toggle-editor');
     const closeEditorButton = document.getElementById('close-editor');
     const errorContainer = document.getElementById('error-container');
     const errorText = document.getElementById('error-text');
     const autoCompileCheckbox = document.getElementById('auto-compile-checkbox');
-    const switchTo2DButton = document.getElementById('switch-to-2d');
-    const switchTo3DButton = document.getElementById('switch-to-3d');
-    const switchToARButton = document.getElementById('switch-to-ar');
-    const floatingUploadObjButton = document.getElementById('floating-upload-obj');
+    // Removed bottom buttons
+    // const switchTo2DButton = document.getElementById('switch-to-2d');
+    // const switchTo3DButton = document.getElementById('switch-to-3d');
+    // const switchToARButton = document.getElementById('switch-to-ar');
+    // const floatingUploadObjButton = document.getElementById('floating-upload-obj');
+    // Texture-related DOM elements
+    const textureControls = document.getElementById('texture-controls');
+    const toggleTextureButton = document.getElementById('toggle-texture');
+    const textureFileInput = document.getElementById('texture-file-input');
+    const texturePanel = document.getElementById('texture-panel');
+    const addTextureButton = document.getElementById('add-texture');
+    const textureList = document.getElementById('texture-list');
+    // Control panel elements
+    const toggleControlPanelButton = document.getElementById('toggle-control-panel');
+    const controlsBar = document.getElementById('controls-bar');
 
     // Check for WebXR support
     if ('xr' in navigator) {
@@ -501,10 +528,18 @@ void main() {
     autoCompileCheckbox.checked = state.autoCompileEnabled;
 
     // Initialize button visibility based on current render mode
-    switchTo2DButton.style.display = state.renderMode === '3D' || state.renderMode === 'AR' ? 'block' : 'none';
-    switchTo3DButton.style.display = state.renderMode === '2D' || state.renderMode === 'AR' ? 'block' : 'none';
-    switchToARButton.style.display = state.renderMode === '2D' || state.renderMode === '3D' ? 'block' : 'none';
-    floatingUploadObjButton.style.display = state.renderMode === '3D' ? 'block' : 'none';
+    // Removed bottom buttons
+    // switchTo2DButton.style.display = state.renderMode === '3D' || state.renderMode === 'AR' ? 'block' : 'none';
+    // switchTo3DButton.style.display = state.renderMode === '2D' || state.renderMode === 'AR' ? 'block' : 'none';
+    // switchToARButton.style.display = state.renderMode === '2D' || state.renderMode === '3D' ? 'block' : 'none';
+    // floatingUploadObjButton.style.display = state.renderMode === '3D' ? 'block' : 'none';
+
+    // Initialize control panel and texture controls visibility based on state
+    controlsBar.style.display = state.controlPanelVisible ? 'flex' : 'none';
+    textureControls.style.display = state.renderMode === '3D' && state.controlPanelVisible ? 'flex' : 'none';
+    texturePanel.style.display = state.renderMode === '3D' && state.showTextureUpload && state.controlPanelVisible ? 'flex' : 'none';
+    toggleTextureButton.textContent = state.showTextureUpload ? 'Hide Textures' : 'Show Textures';
+    toggleControlPanelButton.textContent = state.controlPanelVisible ? 'Hide Controls' : 'Show Controls';
 
     // Initialize WebGL
     initWebGL();
@@ -529,9 +564,10 @@ void main() {
       compileShader();
     });
 
-    toggleEditorButton.addEventListener('click', function() {
-      toggleEditor();
-    });
+    // Removed bottom buttons
+    // toggleEditorButton.addEventListener('click', function() {
+    //   toggleEditor();
+    // });
 
     closeEditorButton.addEventListener('click', function() {
       toggleEditor();
@@ -607,21 +643,22 @@ void main() {
     canvas.addEventListener('wheel', handleWheel);
 
     // Event listeners for the new buttons
-    switchTo2DButton.addEventListener('click', function() {
-      setRenderMode('2D');
-    });
+    // Removed bottom buttons
+    // switchTo2DButton.addEventListener('click', function() {
+    //   setRenderMode('2D');
+    // });
 
-    switchTo3DButton.addEventListener('click', function() {
-      setRenderMode('3D');
-    });
+    // switchTo3DButton.addEventListener('click', function() {
+    //   setRenderMode('3D');
+    // });
 
-    switchToARButton.addEventListener('click', function() {
-      if (state.xrSupported) {
-        setRenderMode('AR');
-      } else {
-        alert('WebXR AR is not supported on this device or browser');
-      }
-    });
+    // switchToARButton.addEventListener('click', function() {
+    //   if (state.xrSupported) {
+    //     setRenderMode('AR');
+    //   } else {
+    //     alert('WebXR AR is not supported on this device or browser');
+    //   }
+    // });
 
     modeARButton.addEventListener('click', function() {
       if (state.xrSupported) {
@@ -631,11 +668,51 @@ void main() {
       }
     });
 
-    floatingUploadObjButton.addEventListener('click', function() {
-      objFileInput.click();
+    // floatingUploadObjButton.addEventListener('click', function() {
+    //   objFileInput.click();
+    // });
+
+    // Control panel toggle event listener
+    toggleControlPanelButton.addEventListener('click', function() {
+      toggleControlPanel();
     });
 
-    // Clean up resources when page is unloaded
+    // Texture-related event listeners
+    toggleTextureButton.addEventListener('click', function() {
+      state.showTextureUpload = !state.showTextureUpload;
+      texturePanel.style.display = state.showTextureUpload && state.controlPanelVisible ? 'flex' : 'none';
+      toggleTextureButton.textContent = state.showTextureUpload ? 'Hide Textures' : 'Show Textures';
+    });
+
+    addTextureButton.addEventListener('click', function() {
+      textureFileInput.click();
+    });
+
+    textureFileInput.addEventListener('change', function(event) {
+      const file = event.target.files?.[0];
+      if (file) {
+        // Create a unique ID for the texture
+        const id = `texture${state.textures.length}`;
+        const name = file.name.split('.')[0] || id;
+
+        // Create a URL for the image
+        const url = URL.createObjectURL(file);
+
+        // Add the new texture to the textures array
+        const newTexture = { id, name, url };
+        state.textures.push(newTexture);
+
+        // Update the texture list UI
+        updateTextureList();
+
+        // Reset the input
+        textureFileInput.value = '';
+
+        // Recompile the shader to use the new texture
+        compileShader();
+      }
+    });
+
     window.addEventListener('beforeunload', function() {
       // Stop auto-compile timer
       stopAutoCompileTimer();
@@ -730,6 +807,46 @@ void main() {
       syncScroll();
     }
 
+    // Function to update the texture list UI
+    function updateTextureList() {
+      // Clear the texture list
+      textureList.innerHTML = '';
+
+      // If no textures, show the default message
+      if (state.textures.length === 0) {
+        const noTexturesMsg = document.createElement('span');
+        noTexturesMsg.className = 'text-gray-400 text-sm';
+        noTexturesMsg.textContent = 'No textures added yet. Click "Add Texture" to upload.';
+        textureList.appendChild(noTexturesMsg);
+        return;
+      }
+
+      // Add each texture to the list
+      state.textures.forEach((texture) => {
+        const textureItem = document.createElement('div');
+        textureItem.className = 'flex flex-col items-center bg-gray-700 p-2 rounded';
+
+        const textureImg = document.createElement('img');
+        textureImg.src = texture.url;
+        textureImg.alt = texture.name;
+        textureImg.className = 'w-12 h-12 object-cover rounded mb-1';
+
+        const textureName = document.createElement('span');
+        textureName.className = 'text-xs text-white';
+        textureName.textContent = texture.name;
+
+        const textureUniform = document.createElement('span');
+        textureUniform.className = 'text-xs text-gray-400';
+        textureUniform.textContent = `u_${texture.id}`;
+
+        textureItem.appendChild(textureImg);
+        textureItem.appendChild(textureName);
+        textureItem.appendChild(textureUniform);
+
+        textureList.appendChild(textureItem);
+      });
+    }
+
     function syncScroll() {
       // Sync the scroll position of the highlighting element with the textarea
       const highlightElement = document.querySelector('#editor-highlight');
@@ -737,10 +854,31 @@ void main() {
       highlightElement.scrollLeft = editorTextarea.scrollLeft;
     }
 
+    function toggleControlPanel() {
+      state.controlPanelVisible = !state.controlPanelVisible;
+
+      // Update control panel elements visibility
+      controlsBar.style.display = state.controlPanelVisible ? 'flex' : 'none';
+      if (state.renderMode === '3D' && state.showTextureUpload) {
+        texturePanel.style.display = state.controlPanelVisible ? 'flex' : 'none';
+      }
+
+      // Update button text
+      toggleControlPanelButton.textContent = state.controlPanelVisible ? 'Hide Controls' : 'Show Controls';
+
+      // Adjust editor position based on control panel visibility
+      if (state.controlPanelVisible) {
+        editorContainer.style.top = '24px'; // Position below control panel
+      } else {
+        editorContainer.style.top = '4px';  // Position at top when control panel is hidden
+      }
+    }
+
     function toggleEditor() {
       state.editorVisible = !state.editorVisible;
       editorContainer.style.display = state.editorVisible ? 'flex' : 'none';
-      toggleEditorButton.textContent = state.editorVisible ? 'Hide Editor' : 'Show Editor';
+      // Removed bottom buttons
+      // toggleEditorButton.textContent = state.editorVisible ? 'Hide Editor' : 'Show Editor';
 
       // If editor is hidden, stop auto-compile
       if (!state.editorVisible && state.autoCompileEnabled) {
@@ -818,13 +956,19 @@ void main() {
         ? 'px-3 py-1 rounded text-sm bg-indigo-500 text-white'
         : 'px-3 py-1 rounded text-sm bg-gray-600 hover:bg-gray-500';
 
-      primitiveControls.style.display = mode === '3D' ? 'flex' : 'none';
+      primitiveControls.style.display = mode === '3D' && state.controlPanelVisible ? 'flex' : 'none';
+
+      // Show/hide the texture controls and panel
+      textureControls.style.display = mode === '3D' && state.controlPanelVisible ? 'flex' : 'none';
+      texturePanel.style.display = mode === '3D' && state.showTextureUpload && state.controlPanelVisible ? 'flex' : 'none';
+      toggleTextureButton.textContent = state.showTextureUpload ? 'Hide Textures' : 'Show Textures';
 
       // Show/hide the new buttons based on the current render mode
-      switchTo2DButton.style.display = (mode === '3D' || mode === 'AR') ? 'block' : 'none';
-      switchTo3DButton.style.display = (mode === '2D' || mode === 'AR') ? 'block' : 'none';
-      switchToARButton.style.display = (mode === '2D' || mode === '3D') ? 'block' : 'none';
-      floatingUploadObjButton.style.display = mode === '3D' ? 'block' : 'none';
+      // Removed bottom buttons
+      // switchTo2DButton.style.display = (mode === '3D' || mode === 'AR') ? 'block' : 'none';
+      // switchTo3DButton.style.display = (mode === '2D' || mode === 'AR') ? 'block' : 'none';
+      // switchToARButton.style.display = (mode === '2D' || mode === '3D') ? 'block' : 'none';
+      // floatingUploadObjButton.style.display = mode === '3D' ? 'block' : 'none';
 
       // Update shaders
       if (mode === '2D') {
@@ -911,11 +1055,19 @@ void main() {
 
         primitiveControls.style.display = 'none';
 
+        // Hide texture controls and panel in AR mode
+        textureControls.style.display = 'none';
+        texturePanel.style.display = 'none';
+
+        // Keep control panel toggle button visible in AR mode
+        toggleControlPanelButton.style.display = 'block';
+
         // Show/hide the new buttons
-        switchTo2DButton.style.display = 'block';
-        switchTo3DButton.style.display = 'block';
-        switchToARButton.style.display = 'none';
-        floatingUploadObjButton.style.display = 'none';
+        // Removed bottom buttons
+        // switchTo2DButton.style.display = 'block';
+        // switchTo3DButton.style.display = 'block';
+        // switchToARButton.style.display = 'none';
+        // floatingUploadObjButton.style.display = 'none';
 
         // Set up the WebGL program for AR
         setupARRendering(session);
@@ -1199,7 +1351,7 @@ void main() {
         gl.vertexAttribPointer(positionAttributeLocation, 2, gl.FLOAT, false, 0, 0);
       } else {
         // 3D geometry setup
-        let positions, normals, indices;
+        let positions, normals, indices, texcoords;
 
         if (state.selectedPrimitive === 'Cube') {
           // Create cube geometry
@@ -1279,6 +1431,45 @@ void main() {
             -1, 0, 0
           ];
 
+          // Texture coordinates for cube
+          texcoords = [
+            // Front face
+            0.0, 0.0,
+            1.0, 0.0,
+            1.0, 1.0,
+            0.0, 1.0,
+
+            // Back face
+            1.0, 0.0,
+            1.0, 1.0,
+            0.0, 1.0,
+            0.0, 0.0,
+
+            // Top face
+            0.0, 1.0,
+            0.0, 0.0,
+            1.0, 0.0,
+            1.0, 1.0,
+
+            // Bottom face
+            1.0, 1.0,
+            0.0, 1.0,
+            0.0, 0.0,
+            1.0, 0.0,
+
+            // Right face
+            1.0, 0.0,
+            1.0, 1.0,
+            0.0, 1.0,
+            0.0, 0.0,
+
+            // Left face
+            0.0, 0.0,
+            1.0, 0.0,
+            1.0, 1.0,
+            0.0, 1.0
+          ];
+
           indices = [
             0, 1, 2, 0, 2, 3,       // Front face
             4, 5, 6, 4, 6, 7,       // Back face
@@ -1296,6 +1487,7 @@ void main() {
           positions = [];
           normals = [];
           indices = [];
+          texcoords = [];
 
           // Generate vertices
           for (let lat = 0; lat <= latitudeBands; lat++) {
@@ -1311,6 +1503,11 @@ void main() {
               const x = cosPhi * sinTheta;
               const y = cosTheta;
               const z = sinPhi * sinTheta;
+
+              // Texture coordinates: u is longitude, v is latitude
+              const u = 1 - (lon / longitudeBands);
+              const v = 1 - (lat / latitudeBands);
+              texcoords.push(u, v);
 
               positions.push(radius * x, radius * y, radius * z);
               normals.push(x, y, z);
@@ -1331,6 +1528,7 @@ void main() {
           // Use the uploaded OBJ data
           positions = state.uploadedOBJData.vertices;
           normals = state.uploadedOBJData.normals;
+          texcoords = state.uploadedOBJData.texcoords || [];
 
           // For uploaded OBJ, we'll use non-indexed drawing
           // Create position buffer
@@ -1350,6 +1548,19 @@ void main() {
           const normalAttributeLocation = gl.getAttribLocation(program, 'a_normal');
           gl.enableVertexAttribArray(normalAttributeLocation);
           gl.vertexAttribPointer(normalAttributeLocation, 3, gl.FLOAT, false, 0, 0);
+
+          // Create texture coordinate buffer if available
+          const texcoordAttributeLocation = gl.getAttribLocation(program, 'a_texcoord');
+          if (texcoords.length > 0 && texcoordAttributeLocation !== -1) {
+            const texcoordBuffer = gl.createBuffer();
+            gl.bindBuffer(gl.ARRAY_BUFFER, texcoordBuffer);
+            gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(texcoords), gl.STATIC_DRAW);
+            gl.enableVertexAttribArray(texcoordAttributeLocation);
+            gl.vertexAttribPointer(texcoordAttributeLocation, 2, gl.FLOAT, false, 0, 0);
+          } else if (texcoordAttributeLocation !== -1) {
+            // If no texture coordinates are available, disable the attribute
+            gl.disableVertexAttribArray(texcoordAttributeLocation);
+          }
 
           // Store the number of vertices for drawing
           state.numIndices = positions.length / 3;
@@ -1378,6 +1589,16 @@ void main() {
         const normalAttributeLocation = gl.getAttribLocation(program, 'a_normal');
         gl.enableVertexAttribArray(normalAttributeLocation);
         gl.vertexAttribPointer(normalAttributeLocation, 3, gl.FLOAT, false, 0, 0);
+
+        // Create texture coordinate buffer
+        const texcoordAttributeLocation = gl.getAttribLocation(program, 'a_texcoord');
+        if (texcoordAttributeLocation !== -1) {
+          const texcoordBuffer = gl.createBuffer();
+          gl.bindBuffer(gl.ARRAY_BUFFER, texcoordBuffer);
+          gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(texcoords), gl.STATIC_DRAW);
+          gl.enableVertexAttribArray(texcoordAttributeLocation);
+          gl.vertexAttribPointer(texcoordAttributeLocation, 2, gl.FLOAT, false, 0, 0);
+        }
 
         // Create index buffer
         const indexBuffer = gl.createBuffer();
@@ -1465,6 +1686,53 @@ void main() {
         const viewPositionLocation = gl.getUniformLocation(program, 'u_viewPosition');
         gl.uniform3f(viewPositionLocation, viewPos[0], viewPos[1], viewPos[2]);
 
+        // Bind textures if available
+        if (state.textures && state.textures.length > 0) {
+          state.textures.forEach((texture, index) => {
+            // Create texture if it doesn't exist
+            if (!texture.glTexture) {
+              const glTexture = gl.createTexture();
+              gl.bindTexture(gl.TEXTURE_2D, glTexture);
+
+              // Use a temporary 1x1 pixel until the image loads
+              gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, 1, 1, 0, gl.RGBA, gl.UNSIGNED_BYTE, 
+                           new Uint8Array([0, 0, 0, 255])); // Black pixel
+
+              // Load the image
+              const image = new Image();
+              image.onload = () => {
+                gl.bindTexture(gl.TEXTURE_2D, glTexture);
+                gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, image);
+
+                // Check if the image dimensions are powers of 2
+                if (isPowerOf2(image.width) && isPowerOf2(image.height)) {
+                  gl.generateMipmap(gl.TEXTURE_2D);
+                } else {
+                  // Not a power of 2, disable mipmap and set wrapping to clamp to edge
+                  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+                  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+                  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+                }
+              };
+              image.src = texture.url;
+
+              // Store the texture in the texture object
+              texture.glTexture = glTexture;
+            }
+
+            // Get the uniform location for this texture
+            const samplerName = `u_${texture.id}`;
+            const samplerLocation = gl.getUniformLocation(program, samplerName);
+
+            if (samplerLocation) {
+              // Activate texture unit
+              gl.activeTexture(gl.TEXTURE0 + index);
+              gl.bindTexture(gl.TEXTURE_2D, texture.glTexture);
+              gl.uniform1i(samplerLocation, index);
+            }
+          });
+        }
+
         // Draw the 3D geometry
         if (state.selectedPrimitive === 'UploadedOBJ' && state.uploadedOBJData) {
           // Use non-indexed drawing for uploaded OBJ
@@ -1491,6 +1759,11 @@ void main() {
         canvas.height = displayHeight;
         state.gl.viewport(0, 0, canvas.width, canvas.height);
       }
+    }
+
+    // Helper function to check if a number is a power of 2
+    function isPowerOf2(value) {
+      return (value & (value - 1)) === 0;
     }
 
     function showError(message) {

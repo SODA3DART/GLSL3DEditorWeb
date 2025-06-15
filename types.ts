@@ -35,8 +35,17 @@ export interface ModelData {
   uvs?: number[]; // Optional for texture coordinates
 }
 
+export interface TextureInfo {
+  id: string;
+  name: string;
+  url: string;
+  texture?: WebGLTexture;
+}
+
 export interface CameraState {
   angleX: number;
   angleY: number;
   distance: number;
+  panX: number;
+  panY: number;
 }
