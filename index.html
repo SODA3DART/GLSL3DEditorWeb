@@ -1273,7 +1273,8 @@ void main() {
         // Request an immersive-vr session
         const session = await navigator.xr.requestSession('immersive-vr', {
           requiredFeatures: ['local'],
-          optionalFeatures: ['hand-tracking']
+          optionalFeatures: ['hand-tracking', 'dom-overlay'],
+          domOverlay: { root: document.body }
         });
 
         state.xrSession = session;
@@ -1318,6 +1319,26 @@ void main() {
         // Keep control panel toggle button visible in VR mode
         toggleControlPanelButton.style.display = 'block';
 
+        // Ensure editor is visible in VR mode
+        state.editorVisible = true;
+        editorContainer.style.display = 'flex';
+
+        // Position the editor panel appropriately in VR mode
+        // In VR, we want the editor to be positioned in front of the user
+        // at a comfortable distance and angle
+        editorContainer.style.position = 'fixed';
+        editorContainer.style.top = '50%';
+        editorContainer.style.left = '50%';
+        editorContainer.style.transform = 'translate(-50%, -50%)';
+        editorContainer.style.zIndex = '1000'; // Ensure it's on top
+
+        // Add VR mode instructions to the editor
+        const vrInstructions = document.createElement('div');
+        vrInstructions.id = 'vr-instructions';
+        vrInstructions.className = 'p-2 bg-indigo-600 text-white text-sm rounded mb-2';
+        vrInstructions.textContent = 'VR Mode: Edit shader code and click "Compile & Run" to see changes in real-time.';
+        editorContainer.insertBefore(vrInstructions, editorContainer.firstChild);
+
         // Set up the WebGL program for VR
         setupVRRendering(session);
 
@@ -1332,6 +1353,19 @@ void main() {
         state.xrSession.end();
         // The session's 'end' event handler will clean up the state
       }
+
+      // Remove VR instructions if they exist
+      const vrInstructions = document.getElementById('vr-instructions');
+      if (vrInstructions) {
+        vrInstructions.remove();
+      }
+
+      // Restore original editor position and style
+      editorContainer.style.position = 'absolute';
+      editorContainer.style.top = state.controlPanelVisible ? '24px' : '4px';
+      editorContainer.style.left = '4px';
+      editorContainer.style.transform = '';
+      editorContainer.style.zIndex = '20';
     }
 
     function setupVRRendering(session) {
@@ -1459,6 +1493,41 @@ void main() {
     function initWebGL() {
       // If we're in AR mode, don't reinitialize WebGL as it's handled by the AR session
       if (state.renderMode === 'AR' && state.xrSession) {
+        return;
+      }
+
+      // If we're in VR mode, update the shader program and restart VR rendering
+      if (state.renderMode === 'VR' && state.xrSession) {
+        try {
+          const gl = state.gl;
+          if (gl) {
+            // Create new shader program
+            const vertexShader = createShader(gl, gl.VERTEX_SHADER, state.activeVertexShader);
+            const fragmentShader = createShader(gl, gl.FRAGMENT_SHADER, state.activeFragmentShader);
+            const newProgram = createProgram(gl, vertexShader, fragmentShader);
+
+            // Update program
+            state.program = newProgram;
+            state.lastSuccessfulProgram = newProgram;
+            state.lastSuccessfulFragmentShader = state.activeFragmentShader;
+
+            hideError();
+
+            // Setup geometry
+            setupGeometry();
+
+            // No need to call render() as renderVRFrame is already running
+          }
+        } catch (error) {
+          showError(error.message);
+
+          // If we have a previous successful program, use it
+          if (state.lastSuccessfulProgram && state.gl) {
+            state.activeFragmentShader = state.lastSuccessfulFragmentShader;
+            state.program = state.lastSuccessfulProgram;
+            setupGeometry();
+          }
+        }
         return;
       }
 
