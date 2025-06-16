@@ -1335,8 +1335,8 @@ void main() {
         state.handTracking.enabled = true;
 
         // Create simple sphere geometry for hand joints
-        // Scale joint size to match the main object scaling (3.0)
-        const jointGeometry = createSphereGeometry(0.03, 10, 10); // Small sphere for joints (scaled by 3.0)
+        // Scale joint size to match the main object scaling (6.0)
+        const jointGeometry = createSphereGeometry(0.06, 10, 10); // Small sphere for joints (scaled by 6.0)
 
         // Update state and UI
         state.renderMode = 'VR';
@@ -1542,14 +1542,14 @@ void main() {
                 const jointId = joint.jointName || `joint-${Object.keys(state.handTracking.jointMeshes[handedness]).length}`;
 
                 // Create a simple sphere for the joint
-                const jointGeometry = createSphereGeometry(0.008, 8, 8); // Small sphere for joints
+                const jointGeometry = createSphereGeometry(0.016, 8, 8); // Small sphere for joints (scaled for 6.0)
                 state.handTracking.jointMeshes[handedness][jointId] = {
                   geometry: jointGeometry,
                   visible: false,
                   position: [0, 0, 0],
-                  // Scale joint radius to match the main object scaling (3.0)
+                  // Scale joint radius to match the main object scaling (6.0)
                   radius: joint.jointName.includes('wrist') || joint.jointName.includes('thumb-tip') || 
-                          joint.jointName.includes('index-finger-tip') ? 0.036 : 0.024 // Larger for important joints (scaled by 3.0)
+                          joint.jointName.includes('index-finger-tip') ? 0.072 : 0.048 // Larger for important joints (scaled by 6.0)
                 };
               }
             }
@@ -1589,8 +1589,8 @@ void main() {
                         );
 
                         // If distance is small enough, consider it a pinch/grab gesture
-                        // Scale threshold to match the joint scaling (3.0)
-                        const isPinching = distance < 0.09; // 9cm threshold (scaled by 3.0)
+                        // Scale threshold to match the joint scaling (6.0)
+                        const isPinching = distance < 0.18; // 18cm threshold (scaled by 6.0)
 
                         // Handle object grabbing and moving
                         if (isPinching && !state.handTracking.isGrabbing) {
@@ -1677,8 +1677,8 @@ void main() {
         const modelMatrix = createIdentityMatrix();
 
         // Apply scaling to match the size in 3D mode
-        // Scale factor of 3.0 makes the object appear similar in size to 3D mode
-        const scaleFactor = 3.0;
+        // Scale factor of 6.0 makes the object appear larger in VR mode
+        const scaleFactor = 6.0;
         modelMatrix[0] = scaleFactor; // Scale x
         modelMatrix[5] = scaleFactor; // Scale y
         modelMatrix[10] = scaleFactor; // Scale z
