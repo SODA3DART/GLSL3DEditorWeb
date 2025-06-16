@@ -1597,7 +1597,7 @@ void main() {
                           // Start grabbing
                           state.handTracking.isGrabbing = true;
                           state.handTracking.grabStartPosition = [...thumbTipPosition];
-                          state.handTracking.grabStartObjectPosition = [0, 0, -2]; // Current object position
+                          state.handTracking.grabStartObjectPosition = [0, 0, -1]; // Current object position
                           console.log('Grab started');
                         } else if (!isPinching && state.handTracking.isGrabbing) {
                           // End grabbing
@@ -1689,8 +1689,8 @@ void main() {
           modelMatrix[13] = state.handTracking.objectPosition[1]; // y
           modelMatrix[14] = state.handTracking.objectPosition[2]; // z
         } else {
-          // Default position: 2 meters in front of the user
-          modelMatrix[14] = -2.0;
+          // Default position: 1 meter in front of the user
+          modelMatrix[14] = -1.0;
         }
 
         const modelMatrixLocation = gl.getUniformLocation(program, 'u_modelMatrix');
