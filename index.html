@@ -1320,6 +1320,13 @@ void main() {
           state.handTracking.selectedObject = null;
           state.handTracking.isGrabbing = false;
 
+          // Reset camera state to default values
+          state.cameraState = {
+            angleX: Math.PI / 6,
+            angleY: Math.PI / 4,
+            distance: 3
+          };
+
           // Switch back to 3D mode when VR session ends
           setRenderMode('3D');
         });
