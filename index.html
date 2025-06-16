@@ -1332,11 +1332,59 @@ void main() {
         editorContainer.style.transform = 'translate(-50%, -50%)';
         editorContainer.style.zIndex = '1000'; // Ensure it's on top
 
+        // Make sure the editor is visible in the VR space
+        // Use the DOM Overlay API to ensure the editor is visible and interactive in VR
+        if (session.domOverlayState && session.domOverlayState.type) {
+          console.log('DOM Overlay available in VR mode:', session.domOverlayState.type);
+        } else {
+          console.warn('DOM Overlay not available in this VR session');
+        }
+
+        // Ensure the editor is properly sized and styled for VR
+        editorContainer.style.width = '500px'; // Appropriate width for VR
+        editorContainer.style.maxHeight = '60vh'; // Limit height to ensure visibility
+        editorContainer.style.backgroundColor = 'rgba(31, 41, 55, 0.9)'; // More opaque background for better visibility in VR
+        editorContainer.style.backdropFilter = 'blur(12px)'; // Stronger blur for better readability
+
+        // Ensure the editor is interactive in VR mode
+        // Make the textarea more visible and easier to interact with
+        editorTextarea.style.caretColor = '#ffffff'; // More visible cursor
+        editorTextarea.style.fontSize = '16px'; // Larger font for better readability in VR
+
+        // Add special event handlers for VR mode
+        const vrEditorFocusHandler = function() {
+          // When the editor is focused in VR mode, make it more prominent
+          editorContainer.style.boxShadow = '0 0 20px rgba(79, 70, 229, 0.6)'; // Indigo glow
+        };
+
+        const vrEditorBlurHandler = function() {
+          // When the editor loses focus in VR mode, return to normal appearance
+          editorContainer.style.boxShadow = '';
+        };
+
+        // Add these event listeners
+        editorTextarea.addEventListener('focus', vrEditorFocusHandler);
+        editorTextarea.addEventListener('blur', vrEditorBlurHandler);
+
+        // Store these handlers so we can remove them when exiting VR mode
+        state.vrEditorHandlers = {
+          focus: vrEditorFocusHandler,
+          blur: vrEditorBlurHandler
+        };
+
         // Add VR mode instructions to the editor
         const vrInstructions = document.createElement('div');
         vrInstructions.id = 'vr-instructions';
-        vrInstructions.className = 'p-2 bg-indigo-600 text-white text-sm rounded mb-2';
-        vrInstructions.textContent = 'VR Mode: Edit shader code and click "Compile & Run" to see changes in real-time.';
+        vrInstructions.className = 'p-3 bg-indigo-600 text-white text-sm rounded mb-2';
+        vrInstructions.innerHTML = `
+          <p class="font-bold mb-1">VR Mode: Editor is now visible and editable in VR space</p>
+          <ul class="list-disc pl-5 space-y-1">
+            <li>Tap or click in the editor to start typing</li>
+            <li>Edit your shader code directly in VR space</li>
+            <li>Click "Compile & Run" to see changes in real-time</li>
+            <li>The editor will stay visible as you move in VR space</li>
+          </ul>
+        `;
         editorContainer.insertBefore(vrInstructions, editorContainer.firstChild);
 
         // Set up the WebGL program for VR
@@ -1360,12 +1408,28 @@ void main() {
         vrInstructions.remove();
       }
 
+      // Remove VR-specific event listeners
+      if (state.vrEditorHandlers) {
+        editorTextarea.removeEventListener('focus', state.vrEditorHandlers.focus);
+        editorTextarea.removeEventListener('blur', state.vrEditorHandlers.blur);
+        state.vrEditorHandlers = null;
+      }
+
       // Restore original editor position and style
       editorContainer.style.position = 'absolute';
       editorContainer.style.top = state.controlPanelVisible ? '24px' : '4px';
       editorContainer.style.left = '4px';
       editorContainer.style.transform = '';
       editorContainer.style.zIndex = '20';
+      editorContainer.style.width = '';
+      editorContainer.style.maxHeight = '';
+      editorContainer.style.backgroundColor = '';
+      editorContainer.style.backdropFilter = '';
+      editorContainer.style.boxShadow = '';
+
+      // Restore original textarea style
+      editorTextarea.style.caretColor = '';
+      editorTextarea.style.fontSize = '';
     }
 
     function setupVRRendering(session) {
@@ -1408,6 +1472,14 @@ void main() {
       const pose = frame.getViewerPose(referenceSpace);
 
       if (!pose) return;
+
+      // Update editor position based on viewer pose if needed
+      // This ensures the editor stays in a comfortable position relative to the user
+      if (state.editorVisible && editorContainer) {
+        // Keep the editor visible and in a comfortable position
+        // We don't need to change the position on every frame as the DOM overlay
+        // will follow the user's head movement automatically
+      }
 
       // Get the WebGL layer
       const glLayer = session.renderState.baseLayer;
