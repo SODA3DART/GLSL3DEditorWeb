@@ -529,15 +529,185 @@ void main() {
   gl_FragColor = vec4(finalColor, 1.0);
 }`;
 
+    // Function to parse URL parameters
+    function getUrlParams() {
+      const params = {};
+      const queryString = window.location.search;
+      const urlParams = new URLSearchParams(queryString);
+
+      for (const [key, value] of urlParams.entries()) {
+        params[key] = value;
+      }
+
+      return params;
+    }
+
+    // Gallery of shader samples - paths to shader files
+    const shaderGallery = {
+      // 2D Shaders
+      '2d': {
+        'default': 'Gallery/2d/default.glsl',
+        'circles': 'Gallery/2d/circles.glsl',
+        'waves': 'Gallery/2d/waves.glsl',
+        'fractal': 'Gallery/2d/fractal.glsl'
+      },
+      // 3D Shaders
+      '3d': {
+        'default': 'Gallery/3d/default.glsl',
+        'toon': 'Gallery/3d/toon.glsl',
+        'toon-advanced': 'Gallery/3d/toon-advanced.glsl',
+        'phong': 'Gallery/3d/phong.glsl',
+        'rainbow': 'Gallery/3d/rainbow.glsl'
+      }
+    };
+
+    // Function to fetch shader code from file
+    async function fetchShaderCode(path) {
+      try {
+        const response = await fetch(path);
+        if (!response.ok) {
+          throw new Error(`Failed to fetch shader: ${response.status} ${response.statusText}`);
+        }
+        return await response.text();
+      } catch (error) {
+        console.error(`Error fetching shader from ${path}:`, error);
+        // Return default shader as fallback
+        if (path.includes('/2d/')) {
+          return DEFAULT_FRAGMENT_SHADER_2D;
+        } else {
+          return DEFAULT_FRAGMENT_SHADER_3D;
+        }
+      }
+    }
+
+    // Get URL parameters
+    const urlParams = getUrlParams();
+
+    // Determine which shader to load based on URL parameters
+    async function getInitialShader() {
+      // Check if gallery parameter exists
+      if (urlParams.gallery) {
+        const [mode, sample] = urlParams.gallery.split('-');
+
+        // Check if the mode and sample exist in the gallery
+        if (shaderGallery[mode] && shaderGallery[mode][sample]) {
+          // Get the shader path
+          const shaderPath = shaderGallery[mode][sample];
+
+          // Fetch the shader code
+          const shaderCode = await fetchShaderCode(shaderPath);
+
+          // If mode is 2D, set render mode to 2D
+          if (mode === '2d') {
+            return {
+              renderMode: '2D',
+              shader: shaderCode
+            };
+          } else if (mode === '3d') {
+            return {
+              renderMode: '3D',
+              shader: shaderCode
+            };
+          }
+        }
+      }
+
+      // Default to 3D mode with default shader
+      return {
+        renderMode: '3D',
+        shader: DEFAULT_FRAGMENT_SHADER_3D
+      };
+    }
+
+    // Initialize the application
+    async function initializeApp() {
+      // Get initial shader and render mode
+      const initialShaderInfo = await getInitialShader();
+
+      // Determine which vertex shader to use based on render mode
+      const initialVertexShader = initialShaderInfo.renderMode === '2D' 
+        ? DEFAULT_VERTEX_SHADER_2D 
+        : DEFAULT_VERTEX_SHADER_3D;
+
+      // Initialize state
+      state.renderMode = initialShaderInfo.renderMode;
+      state.currentFragmentShader = initialShaderInfo.shader;
+      state.activeFragmentShader = initialShaderInfo.shader;
+      state.lastSuccessfulFragmentShader = initialShaderInfo.shader;
+      state.activeVertexShader = initialVertexShader;
+
+      // Initialize editor
+      editorTextarea.value = state.currentFragmentShader;
+      updateHighlight();
+
+      // Initialize auto-compile checkbox
+      autoCompileCheckbox.checked = state.autoCompileEnabled;
+
+      // Initialize UI based on initial render mode
+      mode2DButton.className = state.renderMode === '2D' 
+        ? 'px-3 py-1 rounded text-sm bg-indigo-500 text-white'
+        : 'px-3 py-1 rounded text-sm bg-gray-600 hover:bg-gray-500';
+
+      mode3DButton.className = state.renderMode === '3D'
+        ? 'px-3 py-1 rounded text-sm bg-indigo-500 text-white'
+        : 'px-3 py-1 rounded text-sm bg-gray-600 hover:bg-gray-500';
+
+      modeARButton.className = state.renderMode === 'AR'
+        ? 'px-3 py-1 rounded text-sm bg-indigo-500 text-white'
+        : 'px-3 py-1 rounded text-sm bg-gray-600 hover:bg-gray-500';
+
+      modeVRButton.className = state.renderMode === 'VR'
+        ? 'px-3 py-1 rounded text-sm bg-indigo-500 text-white'
+        : 'px-3 py-1 rounded text-sm bg-gray-600 hover:bg-gray-500';
+
+      // Initialize control panel and texture controls visibility based on state
+      controlsBar.style.display = state.controlPanelVisible ? 'flex' : 'none';
+      textureControls.style.display = state.renderMode === '3D' && state.controlPanelVisible ? 'flex' : 'none';
+      texturePanel.style.display = state.renderMode === '3D' && state.showTextureUpload && state.controlPanelVisible ? 'flex' : 'none';
+      toggleTextureButton.textContent = state.showTextureUpload ? 'Hide Textures' : 'Show Textures';
+      toggleControlPanelButton.textContent = state.controlPanelVisible ? 'Hide Controls' : 'Show Controls';
+
+      // Initialize light controls visibility based on state
+      lightControls.style.display = state.renderMode === '3D' && state.controlPanelVisible ? 'flex' : 'none';
+      lightPanel.style.display = state.renderMode === '3D' && state.showLightPanel && state.controlPanelVisible ? 'flex' : 'none';
+      toggleLightPanelButton.textContent = state.showLightPanel ? 'Hide Light Settings' : 'Show Light Settings';
+
+      // Initialize light control values with current state values
+      lightDirectionX.value = state.lightSettings.direction.x;
+      lightDirectionY.value = state.lightSettings.direction.y;
+      lightDirectionZ.value = state.lightSettings.direction.z;
+      lightDirectionXValue.textContent = state.lightSettings.direction.x;
+      lightDirectionYValue.textContent = state.lightSettings.direction.y;
+      lightDirectionZValue.textContent = state.lightSettings.direction.z;
+      lightIntensity.value = state.lightSettings.intensity;
+      lightIntensityValue.textContent = state.lightSettings.intensity;
+
+      // Set light color values
+      lightColor.value = rgbToHex(
+        state.lightSettings.color.r,
+        state.lightSettings.color.g,
+        state.lightSettings.color.b
+      );
+
+      ambientColor.value = rgbToHex(
+        state.lightSettings.ambient.r,
+        state.lightSettings.ambient.g,
+        state.lightSettings.ambient.b
+      );
+
+      // Initialize WebGL
+      initWebGL();
+    }
+
     // State
     let state = {
-      renderMode: '3D',
+      renderMode: '3D', // Default, will be updated in initializeApp
       editorVisible: true,
       controlPanelVisible: true, // Control panel visibility state
-      currentFragmentShader: DEFAULT_FRAGMENT_SHADER_3D,
-      activeFragmentShader: DEFAULT_FRAGMENT_SHADER_3D,
-      lastSuccessfulFragmentShader: DEFAULT_FRAGMENT_SHADER_3D,
-      activeVertexShader: DEFAULT_VERTEX_SHADER_3D,
+      currentFragmentShader: DEFAULT_FRAGMENT_SHADER_3D, // Default, will be updated in initializeApp
+      activeFragmentShader: DEFAULT_FRAGMENT_SHADER_3D, // Default, will be updated in initializeApp
+      lastSuccessfulFragmentShader: DEFAULT_FRAGMENT_SHADER_3D, // Default, will be updated in initializeApp
+      activeVertexShader: DEFAULT_VERTEX_SHADER_3D, // Default, will be updated in initializeApp
       selectedPrimitive: 'Cube',
       uploadedOBJData: null,
       gl: null,
@@ -673,41 +843,8 @@ void main() {
       modeVRButton.classList.add('opacity-50');
     }
 
-    // Initialize editor
-    editorTextarea.value = state.currentFragmentShader;
-    updateHighlight();
-
-    // Initialize auto-compile checkbox
-    autoCompileCheckbox.checked = state.autoCompileEnabled;
-
-    // Initialize button visibility based on current render mode
-    // Removed bottom buttons
-    // switchTo2DButton.style.display = state.renderMode === '3D' || state.renderMode === 'AR' ? 'block' : 'none';
-    // switchTo3DButton.style.display = state.renderMode === '2D' || state.renderMode === 'AR' ? 'block' : 'none';
-    // switchToARButton.style.display = state.renderMode === '2D' || state.renderMode === '3D' ? 'block' : 'none';
-    // floatingUploadObjButton.style.display = state.renderMode === '3D' ? 'block' : 'none';
-
-    // Initialize control panel and texture controls visibility based on state
-    controlsBar.style.display = state.controlPanelVisible ? 'flex' : 'none';
-    textureControls.style.display = state.renderMode === '3D' && state.controlPanelVisible ? 'flex' : 'none';
-    texturePanel.style.display = state.renderMode === '3D' && state.showTextureUpload && state.controlPanelVisible ? 'flex' : 'none';
-    toggleTextureButton.textContent = state.showTextureUpload ? 'Hide Textures' : 'Show Textures';
-    toggleControlPanelButton.textContent = state.controlPanelVisible ? 'Hide Controls' : 'Show Controls';
-
-    // Initialize light controls visibility based on state
-    lightControls.style.display = state.renderMode === '3D' && state.controlPanelVisible ? 'flex' : 'none';
-    lightPanel.style.display = state.renderMode === '3D' && state.showLightPanel && state.controlPanelVisible ? 'flex' : 'none';
-    toggleLightPanelButton.textContent = state.showLightPanel ? 'Hide Light Settings' : 'Show Light Settings';
-
-    // Initialize light control values with current state values
-    lightDirectionX.value = state.lightSettings.direction.x;
-    lightDirectionY.value = state.lightSettings.direction.y;
-    lightDirectionZ.value = state.lightSettings.direction.z;
-    lightDirectionXValue.textContent = state.lightSettings.direction.x;
-    lightDirectionYValue.textContent = state.lightSettings.direction.y;
-    lightDirectionZValue.textContent = state.lightSettings.direction.z;
-    lightIntensity.value = state.lightSettings.intensity;
-    lightIntensityValue.textContent = state.lightSettings.intensity;
+    // Initialize the application when the page loads
+    initializeApp();
 
     // Convert RGB values (0-1) to hex color for the color pickers
     const rgbToHex = (r, g, b) => {
@@ -717,21 +854,6 @@ void main() {
       };
       return `#${toHex(r)}${toHex(g)}${toHex(b)}`;
     };
-
-    lightColor.value = rgbToHex(
-      state.lightSettings.color.r,
-      state.lightSettings.color.g,
-      state.lightSettings.color.b
-    );
-
-    ambientColor.value = rgbToHex(
-      state.lightSettings.ambient.r,
-      state.lightSettings.ambient.g,
-      state.lightSettings.ambient.b
-    );
-
-    // Initialize WebGL
-    initWebGL();
 
     // Set canvas cursor for 3D mode
     canvas.style.cursor = 'grab';
