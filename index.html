@@ -467,7 +467,22 @@ void main() {
       xrViewerSpace: null,
       xrARSupported: false,
       // VR-specific state
-      xrVRSupported: false
+      xrVRSupported: false,
+      // Hand tracking state
+      handTracking: {
+        enabled: false,
+        leftHand: null,
+        rightHand: null,
+        jointMeshes: {},
+        handModels: {
+          left: null,
+          right: null
+        },
+        selectedObject: null,
+        isGrabbing: false,
+        grabStartPosition: null,
+        grabStartObjectPosition: null
+      }
     };
 
     // DOM Elements
@@ -1270,10 +1285,10 @@ void main() {
       }
 
       try {
-        // Request an immersive-vr session
+        // Request an immersive-vr session with hand tracking
         const session = await navigator.xr.requestSession('immersive-vr', {
-          requiredFeatures: ['local'],
-          optionalFeatures: ['hand-tracking', 'dom-overlay'],
+          requiredFeatures: ['local', 'hand-tracking'],
+          optionalFeatures: ['dom-overlay'],
           domOverlay: { root: document.body }
         });
 
@@ -1297,9 +1312,23 @@ void main() {
           state.xrReferenceSpace = null;
           state.xrViewerSpace = null;
 
+          // Reset hand tracking state
+          state.handTracking.enabled = false;
+          state.handTracking.leftHand = null;
+          state.handTracking.rightHand = null;
+          state.handTracking.jointMeshes = {};
+          state.handTracking.selectedObject = null;
+          state.handTracking.isGrabbing = false;
+
           // Switch back to 3D mode when VR session ends
           setRenderMode('3D');
         });
+
+        // Initialize hand tracking
+        state.handTracking.enabled = true;
+
+        // Create simple sphere geometry for hand joints
+        const jointGeometry = createSphereGeometry(0.01, 10, 10); // Small sphere for joints
 
         // Update state and UI
         state.renderMode = 'VR';
@@ -1383,6 +1412,14 @@ void main() {
             <li>Edit your shader code directly in VR space</li>
             <li>Click "Compile & Run" to see changes in real-time</li>
             <li>The editor will stay visible as you move in VR space</li>
+          </ul>
+          <p class="font-bold mt-2 mb-1">Hand Tracking Controls:</p>
+          <ul class="list-disc pl-5 space-y-1">
+            <li>Your hands will be visible as colored spheres in VR space</li>
+            <li>Make a pinch gesture (touch thumb to index finger) to grab objects</li>
+            <li>Move your hand while pinching to move the object</li>
+            <li>Release the pinch to drop the object</li>
+            <li>Use hand gestures to interact with the 3D environment</li>
           </ul>
         `;
         editorContainer.insertBefore(vrInstructions, editorContainer.firstChild);
@@ -1473,6 +1510,114 @@ void main() {
 
       if (!pose) return;
 
+      // Handle hand tracking if enabled
+      if (state.handTracking.enabled) {
+        // Get hand tracking inputs
+        for (const inputSource of session.inputSources) {
+          if (inputSource.hand) {
+            const hand = inputSource.hand;
+            const handedness = inputSource.handedness; // 'left' or 'right'
+
+            // Store the hand in state for later use
+            if (handedness === 'left') {
+              state.handTracking.leftHand = hand;
+            } else if (handedness === 'right') {
+              state.handTracking.rightHand = hand;
+            }
+
+            // Create joint meshes if they don't exist for this hand
+            if (!state.handTracking.jointMeshes[handedness]) {
+              state.handTracking.jointMeshes[handedness] = {};
+
+              // Create a mesh for each joint
+              for (const joint of hand.values()) {
+                const jointId = joint.jointName || `joint-${Object.keys(state.handTracking.jointMeshes[handedness]).length}`;
+
+                // Create a simple sphere for the joint
+                const jointGeometry = createSphereGeometry(0.008, 8, 8); // Small sphere for joints
+                state.handTracking.jointMeshes[handedness][jointId] = {
+                  geometry: jointGeometry,
+                  visible: false,
+                  position: [0, 0, 0],
+                  radius: joint.jointName.includes('wrist') || joint.jointName.includes('thumb-tip') || 
+                          joint.jointName.includes('index-finger-tip') ? 0.012 : 0.008 // Larger for important joints
+                };
+              }
+            }
+
+            // Update joint positions
+            for (const joint of hand.values()) {
+              const jointId = joint.jointName;
+              if (jointId && state.handTracking.jointMeshes[handedness][jointId]) {
+                // Get joint pose in reference space
+                const jointPose = frame.getJointPose(joint, referenceSpace);
+                if (jointPose) {
+                  // Update joint mesh position
+                  const position = jointPose.transform.position;
+                  state.handTracking.jointMeshes[handedness][jointId].position = [position.x, position.y, position.z];
+                  state.handTracking.jointMeshes[handedness][jointId].visible = true;
+
+                  // Check for pinch gesture (thumb tip close to index finger tip)
+                  if (handedness === 'right' && jointId === 'thumb-tip') {
+                    const thumbTipPosition = [position.x, position.y, position.z];
+
+                    // Get index finger tip position if available
+                    const indexTip = hand.get('index-finger-tip');
+                    if (indexTip) {
+                      const indexTipPose = frame.getJointPose(indexTip, referenceSpace);
+                      if (indexTipPose) {
+                        const indexTipPosition = [
+                          indexTipPose.transform.position.x,
+                          indexTipPose.transform.position.y,
+                          indexTipPose.transform.position.z
+                        ];
+
+                        // Calculate distance between thumb tip and index finger tip
+                        const distance = Math.sqrt(
+                          Math.pow(thumbTipPosition[0] - indexTipPosition[0], 2) +
+                          Math.pow(thumbTipPosition[1] - indexTipPosition[1], 2) +
+                          Math.pow(thumbTipPosition[2] - indexTipPosition[2], 2)
+                        );
+
+                        // If distance is small enough, consider it a pinch/grab gesture
+                        const isPinching = distance < 0.03; // 3cm threshold
+
+                        // Handle object grabbing and moving
+                        if (isPinching && !state.handTracking.isGrabbing) {
+                          // Start grabbing
+                          state.handTracking.isGrabbing = true;
+                          state.handTracking.grabStartPosition = [...thumbTipPosition];
+                          state.handTracking.grabStartObjectPosition = [0, 0, -2]; // Current object position
+                          console.log('Grab started');
+                        } else if (!isPinching && state.handTracking.isGrabbing) {
+                          // End grabbing
+                          state.handTracking.isGrabbing = false;
+                          console.log('Grab ended');
+                        } else if (isPinching && state.handTracking.isGrabbing) {
+                          // Continue grabbing - move the object
+                          const deltaX = thumbTipPosition[0] - state.handTracking.grabStartPosition[0];
+                          const deltaY = thumbTipPosition[1] - state.handTracking.grabStartPosition[1];
+                          const deltaZ = thumbTipPosition[2] - state.handTracking.grabStartPosition[2];
+
+                          // Update object position (will be used when rendering)
+                          state.handTracking.objectPosition = [
+                            state.handTracking.grabStartObjectPosition[0] + deltaX,
+                            state.handTracking.grabStartObjectPosition[1] + deltaY,
+                            state.handTracking.grabStartObjectPosition[2] + deltaZ
+                          ];
+                        }
+                      }
+                    }
+                  }
+                } else {
+                  state.handTracking.jointMeshes[handedness][jointId].visible = false;
+                }
+              }
+            }
+          }
+        }
+      }
+
       // Update editor position based on viewer pose if needed
       // This ensures the editor stays in a comfortable position relative to the user
       if (state.editorVisible && editorContainer) {
@@ -1520,8 +1665,16 @@ void main() {
 
         // Create model matrix - position the object in front of the user
         const modelMatrix = createIdentityMatrix();
-        // Position the object 2 meters in front of the user
-        modelMatrix[14] = -2.0;
+
+        // If hand tracking is enabled and object is being grabbed, use the tracked position
+        if (state.handTracking.enabled && state.handTracking.isGrabbing && state.handTracking.objectPosition) {
+          modelMatrix[12] = state.handTracking.objectPosition[0]; // x
+          modelMatrix[13] = state.handTracking.objectPosition[1]; // y
+          modelMatrix[14] = state.handTracking.objectPosition[2]; // z
+        } else {
+          // Default position: 2 meters in front of the user
+          modelMatrix[14] = -2.0;
+        }
 
         const modelMatrixLocation = gl.getUniformLocation(program, 'u_modelMatrix');
         gl.uniformMatrix4fv(modelMatrixLocation, false, modelMatrix);
@@ -1553,6 +1706,121 @@ void main() {
           gl.drawArrays(gl.TRIANGLES, 0, state.numIndices);
         } else {
           gl.drawElements(gl.TRIANGLES, state.numIndices, gl.UNSIGNED_SHORT, 0);
+        }
+
+        // Render hand joints if hand tracking is enabled
+        if (state.handTracking.enabled) {
+          // Simple shader for hand joints
+          const jointVertexShader = `
+            attribute vec3 a_position;
+            uniform mat4 u_modelMatrix;
+            uniform mat4 u_viewMatrix;
+            uniform mat4 u_projectionMatrix;
+            void main() {
+              gl_Position = u_projectionMatrix * u_viewMatrix * u_modelMatrix * vec4(a_position, 1.0);
+            }
+          `;
+
+          const jointFragmentShader = `
+            precision mediump float;
+            uniform vec3 u_color;
+            void main() {
+              gl_FragColor = vec4(u_color, 1.0);
+            }
+          `;
+
+          // Create joint shader program if it doesn't exist
+          if (!state.jointProgram) {
+            const vertexShader = createShader(gl, gl.VERTEX_SHADER, jointVertexShader);
+            const fragmentShader = createShader(gl, gl.FRAGMENT_SHADER, jointFragmentShader);
+            state.jointProgram = createProgram(gl, vertexShader, fragmentShader);
+          }
+
+          // Use joint shader program
+          gl.useProgram(state.jointProgram);
+
+          // Set projection and view matrices
+          const projectionMatrixLocation = gl.getUniformLocation(state.jointProgram, 'u_projectionMatrix');
+          gl.uniformMatrix4fv(projectionMatrixLocation, false, projectionMatrix);
+
+          const viewMatrixLocation = gl.getUniformLocation(state.jointProgram, 'u_viewMatrix');
+          gl.uniformMatrix4fv(viewMatrixLocation, false, viewMatrix);
+
+          // Create buffers for joint geometry if they don't exist
+          if (!state.jointBuffers) {
+            state.jointBuffers = {};
+          }
+
+          // Render each visible joint
+          for (const handedness in state.handTracking.jointMeshes) {
+            const joints = state.handTracking.jointMeshes[handedness];
+
+            // Set color based on handedness
+            const colorLocation = gl.getUniformLocation(state.jointProgram, 'u_color');
+            if (handedness === 'left') {
+              gl.uniform3f(colorLocation, 0.2, 0.6, 1.0); // Blue for left hand
+            } else {
+              gl.uniform3f(colorLocation, 1.0, 0.6, 0.2); // Orange for right hand
+            }
+
+            for (const jointId in joints) {
+              const joint = joints[jointId];
+
+              if (joint.visible) {
+                // Create buffer for this joint if it doesn't exist
+                if (!state.jointBuffers[jointId]) {
+                  const geometry = joint.geometry;
+
+                  // Position buffer
+                  const positionBuffer = gl.createBuffer();
+                  gl.bindBuffer(gl.ARRAY_BUFFER, positionBuffer);
+                  gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(geometry.positions), gl.STATIC_DRAW);
+
+                  // Index buffer
+                  const indexBuffer = gl.createBuffer();
+                  gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, indexBuffer);
+                  gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, new Uint16Array(geometry.indices), gl.STATIC_DRAW);
+
+                  state.jointBuffers[jointId] = {
+                    positionBuffer,
+                    indexBuffer,
+                    numIndices: geometry.indices.length
+                  };
+                }
+
+                // Bind position buffer
+                gl.bindBuffer(gl.ARRAY_BUFFER, state.jointBuffers[jointId].positionBuffer);
+                const positionAttributeLocation = gl.getAttribLocation(state.jointProgram, 'a_position');
+                gl.enableVertexAttribArray(positionAttributeLocation);
+                gl.vertexAttribPointer(positionAttributeLocation, 3, gl.FLOAT, false, 0, 0);
+
+                // Bind index buffer
+                gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, state.jointBuffers[jointId].indexBuffer);
+
+                // Create model matrix for joint
+                const jointModelMatrix = createIdentityMatrix();
+                jointModelMatrix[12] = joint.position[0]; // x
+                jointModelMatrix[13] = joint.position[1]; // y
+                jointModelMatrix[14] = joint.position[2]; // z
+
+                // Scale based on joint radius
+                const scale = joint.radius || 0.01;
+                jointModelMatrix[0] = scale;
+                jointModelMatrix[5] = scale;
+                jointModelMatrix[10] = scale;
+
+                // Set model matrix
+                const modelMatrixLocation = gl.getUniformLocation(state.jointProgram, 'u_modelMatrix');
+                gl.uniformMatrix4fv(modelMatrixLocation, false, jointModelMatrix);
+
+                // Draw joint
+                gl.drawElements(gl.TRIANGLES, state.jointBuffers[jointId].numIndices, gl.UNSIGNED_SHORT, 0);
+              }
+            }
+          }
+
+          // Switch back to main program for next frame
+          gl.useProgram(program);
         }
       }
     }
@@ -1700,6 +1968,57 @@ void main() {
       }
 
       return program;
+    }
+
+    // Function to create sphere geometry for hand joints
+    function createSphereGeometry(radius, latitudeBands, longitudeBands) {
+      const positions = [];
+      const normals = [];
+      const indices = [];
+      const texcoords = [];
+
+      // Generate vertices
+      for (let lat = 0; lat <= latitudeBands; lat++) {
+        const theta = lat * Math.PI / latitudeBands;
+        const sinTheta = Math.sin(theta);
+        const cosTheta = Math.cos(theta);
+
+        for (let lon = 0; lon <= longitudeBands; lon++) {
+          const phi = lon * 2 * Math.PI / longitudeBands;
+          const sinPhi = Math.sin(phi);
+          const cosPhi = Math.cos(phi);
+
+          const x = cosPhi * sinTheta;
+          const y = cosTheta;
+          const z = sinPhi * sinTheta;
+
+          // Texture coordinates: u is longitude, v is latitude
+          const u = 1 - (lon / longitudeBands);
+          const v = 1 - (lat / latitudeBands);
+          texcoords.push(u, v);
+
+          positions.push(radius * x, radius * y, radius * z);
+          normals.push(x, y, z);
+        }
+      }
+
+      // Generate indices
+      for (let lat = 0; lat < latitudeBands; lat++) {
+        for (let lon = 0; lon < longitudeBands; lon++) {
+          const first = (lat * (longitudeBands + 1)) + lon;
+          const second = first + longitudeBands + 1;
+
+          indices.push(first, second, first + 1);
+          indices.push(second, second + 1, first + 1);
+        }
+      }
+
+      return {
+        positions: positions,
+        normals: normals,
+        texcoords: texcoords,
+        indices: indices
+      };
     }
 
     function setupGeometry() {
